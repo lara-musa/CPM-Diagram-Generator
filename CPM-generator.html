@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+    .container {
+        position: relative;
+        width: 100vw;
+        height: 100vh;
+    }
+    .node {
+        position: absolute;
+        width: 80px;
+        height: 80px;
+        border-radius: 50%;
+        border: 2px solid black;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: white;
+        cursor: move;
+        font-size: 14px;
+        text-align: center;
+    }
+    .node-input {
+        width: 40px;
+        text-align: center;
+        position: absolute;
+        bottom: -25px;
+        left: 50%;
+        transform: translateX(-50%);
+        border: 1px solid #ccc;
+    }
+    #controls {
+        border: 1px solid #ccc;
+        padding: 10px;
+    }
+    #arrowLayer {
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+    }
+    .numcontrol {
+        width: 28px;
+        text-align: center;
+    }
+    .textcontrol {
+        width: min-content;
+    }
+</style>
+<body>
+    <div id="controls">
+        <label>Number of Tasks: 
+            <input type="number" class="numcontrol" id="taskcount" min="1" value="2">
+        </label>
+        <button onclick="GenerateTasks()">Generate Tasks</button>
+
+        <br><br>
+
+        <label>Connect Tasks (format: "A->B,C;B->D,C"):
+            <input onkeydown="if (event.keyCode == 13) AddConnections()" type="text" class="textcontrol" id="connection-input" placeholder="A->B,C;B->D,C">
+        </label>
+        <button onclick="AddConnections()">Add Connections</button>
+        <button onclick="ClearConnections()">Clear Connections</button>
+    </div>
+
+    <div id="container" class="container">
+        <svg id="arrowLayer"></svg>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/svg.js/3.1.2/svg.min.js"></script>
+    <script>
+        let nodes = [];
+        let connections = [];
+        let isDragging = false;
+        let offset = { x: 0, y: 0 };
+        let draw;
+
+        function GenerateTasks() {
+            // Clearing existing tasks and connections
+            const container = document.getElementById('container');
+            container.innerHTML = '<svg id="arrowLayer"></svg>';
+            nodes = [];
+            connections = [];
+            // Initializing draw
+            draw = SVG().addTo('#arrowLayer').size('100%', '100%');
+
+            const count = document.getElementById('taskcount').value;
+
+            for (let i = 1; i <= count; i++) {
+                GenNode(i);
+            }
+        }
+
+        function GenNode(id) {
+            const node = document.createElement('div');
+            node.className = 'node';
+            node.id = String(id);
+            
+            // Task letter as node text
+            const taskLetter = ConvertTaskNumberToLetter(id);
+            node.textContent = taskLetter;
+
+            // Duration input
+            const durInput = document.createElement('input');
+            durInput.type = 'text';
+            durInput.className = 'node-input';
+            durInput.id = `dur-${id}`;
+            durInput.placeholder = 'Dur';
+            node.appendChild(durInput);
+
+            // Setting the initial position of the nodes to the top-left corner
+            node.style.top = `${50 + (id-1) * 120}px`;
+            node.style.left = '10px';
+           
+            setupDraggable(node);
+            container.appendChild(node);
+            nodes[id] = id;
+        }
+
+        function ConvertTaskNumberToLetter(taskNumber) {
+            return String.fromCharCode(64 + taskNumber);
+        }
+
+        function setupDraggable(element) {
+            element.addEventListener('mousedown', (e) => {
+                if (e.target.tagName.toLowerCase() !== 'input') {
+                    isDragging = true;
+                    currentNode = element;
+                    offset.x = e.clientX - element.offsetLeft;
+                    offset.y = e.clientY - element.offsetTop;
+                }
+            });
+
+            document.addEventListener('mousemove', (e) => {
+                if (isDragging && currentNode) {
+                    currentNode.style.left = `${e.clientX - offset.x}px`;
+                    currentNode.style.top = `${e.clientY - offset.y}px`;
+                    UpdateArrows();
+                }
+            });
+
+            document.addEventListener('mouseup', () => {
+                isDragging = false;
+                currentNode = null;
+            });
+        }
+
+        function AddConnections() {
+            connections = [];
+            const input = document.getElementById('connection-input').value;
+            const pairs = input.split(';');
+           
+            pairs.forEach(pair => {
+                const [source, targets] = pair.split('->');
+                if (targets) {
+                    targets.split(',').forEach(target => {
+                        connections.push({
+                            from: ConvertTaskLetterToNumber(source.trim()),
+                            to: ConvertTaskLetterToNumber(target.trim())
+                        });    
+                    });
+                }
+            });
+            UpdateArrows();
+        }
+
+        function ConvertTaskLetterToNumber(taskLetter) {
+            const uppercaseLetter = taskLetter.toUpperCase();
+            const charCode = uppercaseLetter.charCodeAt(0);
+            return charCode - 64;
+        }
+
+        function UpdateArrows() {
+            // Clearing existing content
+            draw.clear();
+
+            const PADDING = 5;
+            const CONNECTION_SPACING = 15;
+
+            // Counting connections from and to nodes
+            const fromConnectionCounts = {};
+            const toConnectionCounts = {};
+            const fromNodeConnections = {};
+            const toNodeConnections = {};
+
+            connections.forEach(conn => {
+                fromConnectionCounts[conn.from] = (fromConnectionCounts[conn.from] || 0) + 1;
+                toConnectionCounts[conn.to] = (toConnectionCounts[conn.to] || 0) + 1;
+                
+                if (!fromNodeConnections[conn.from]) {
+                    fromNodeConnections[conn.from] = 0;
+                }
+                if (!toNodeConnections[conn.to]) {
+                    toNodeConnections[conn.to] = 0;
+                }
+            });
+
+            connections.forEach(conn => {
+                const fromNode = document.getElementById(String(conn.from));
+                const toNode = document.getElementById(String(conn.to));
+
+                if (fromNode && toNode) {
+                    const fromIndex = fromNodeConnections[conn.from]++;
+                    const toIndex = toNodeConnections[conn.to]++;
+                    const totalFromConnections = fromConnectionCounts[conn.from];
+                    const totalToConnections = toConnectionCounts[conn.to];
+
+                    // Calculating centers
+                    const fromCenter = {
+                        x: fromNode.offsetLeft + (fromNode.offsetWidth / 2),
+                        y: fromNode.offsetTop + (fromNode.offsetHeight / 2)
+                    };
+
+                    const toCenter = {
+                        x: toNode.offsetLeft + (toNode.offsetWidth / 2),
+                        y: toNode.offsetTop + (toNode.offsetHeight / 2)
+                    };
+
+                    // Determining directions
+                    const horizontalDistance = Math.abs(fromCenter.x - toCenter.x);
+                    const verticalDistance = Math.abs(fromCenter.y - toCenter.y);
+                    const isHorizontal = horizontalDistance > verticalDistance;
+
+                    // Calculating offsets
+                    const fromOffset = CONNECTION_SPACING * (fromIndex - (totalFromConnections - 1) / 2);
+                    const toOffset = CONNECTION_SPACING * (toIndex - (totalToConnections - 1) / 2);
+
+                    const points = { from: { x: 0, y: 0 }, to: { x: 0, y: 0 } };
+
+                    if (isHorizontal) {
+                        if (fromCenter.x < toCenter.x) {
+                            points.from.x = fromNode.offsetLeft + fromNode.offsetWidth;
+                            points.to.x = toNode.offsetLeft;
+                        } else {
+                            points.from.x = fromNode.offsetLeft;
+                            points.to.x = toNode.offsetLeft + toNode.offsetWidth;
+                        }
+                        points.from.y = fromCenter.y + fromOffset;
+                        points.to.y = toCenter.y + toOffset;
+                    } else {
+                        if (fromCenter.y < toCenter.y) {
+                            points.from.y = fromNode.offsetTop + fromNode.offsetHeight;
+                            points.to.y = toNode.offsetTop;
+                        } else {
+                            points.from.y = fromNode.offsetTop;
+                            points.to.y = toNode.offsetTop + toNode.offsetHeight;
+                        }
+                        points.from.x = fromCenter.x + fromOffset;
+                        points.to.x = toCenter.x + toOffset;
+                    }
+
+                    const midX = points.from.x + (points.to.x - points.from.x) / 2;
+
+                    // Drawing Arrows
+                    const arrowSize = 10;
+                    const offsetFromEdge = arrowSize;
+
+                    let arrowPoints;
+                    let pathEndPoint;
+
+                    if (isHorizontal) {
+                        if (fromCenter.x < toCenter.x) {
+                            // Arrow pointing right
+                            arrowPoints = [
+                                [points.to.x - arrowSize - offsetFromEdge, points.to.y - arrowSize/2],
+                                [points.to.x - offsetFromEdge, points.to.y],
+                                [points.to.x - arrowSize - offsetFromEdge, points.to.y + arrowSize/2]
+                            ];
+                            pathEndPoint = [points.to.x - arrowSize - offsetFromEdge, points.to.y];
+                        } else {
+                            // Arrow pointing left
+                            arrowPoints = [
+                                [points.to.x + arrowSize + offsetFromEdge, points.to.y - arrowSize/2],
+                                [points.to.x + offsetFromEdge, points.to.y],
+                                [points.to.x + arrowSize + offsetFromEdge, points.to.y + arrowSize/2]
+                            ];
+                            pathEndPoint = [points.to.x + arrowSize + offsetFromEdge, points.to.y];
+                        }
+                    } else {
+                        if (fromCenter.y < toCenter.y) {
+                            // Arrow pointing down
+                            arrowPoints = [
+                                [points.to.x - arrowSize/2, points.to.y - arrowSize - offsetFromEdge],
+                                [points.to.x, points.to.y - offsetFromEdge],
+                                [points.to.x + arrowSize/2, points.to.y - arrowSize - offsetFromEdge]
+                            ];
+                            pathEndPoint = [points.to.x, points.to.y - arrowSize - offsetFromEdge];
+                        } else {
+                            // Arrow pointing up
+                            arrowPoints = [
+                                [points.to.x - arrowSize/2, points.to.y + arrowSize + offsetFromEdge],
+                                [points.to.x, points.to.y + offsetFromEdge],
+                                [points.to.x + arrowSize/2, points.to.y + arrowSize + offsetFromEdge]
+                            ];
+                            pathEndPoint = [points.to.x, points.to.y + arrowSize + offsetFromEdge];
+                        }
+                    }
+
+                    // Drawing arrowheads
+                    draw.polygon(arrowPoints).fill('#333');
+
+                    // Drawing the path
+                    draw.path(
+                        `M ${points.from.x} ${points.from.y} 
+                        ${isHorizontal 
+                            ? `L ${midX} ${points.from.y} 
+                            L ${midX} ${pathEndPoint[1]}`
+                            : `L ${points.from.x} ${(points.from.y + pathEndPoint[1]) / 2}
+                            L ${pathEndPoint[0]} ${(points.from.y + pathEndPoint[1]) / 2}`
+                        }
+                        L ${pathEndPoint[0]} ${pathEndPoint[1]}`
+                    ).fill('none').stroke({ width: 1, color: '#333' });
+                }
+            });
+        }
+
+        function ClearConnections() {
+            connections = [];
+            UpdateArrows();
+        }
+    </script>
+</body>
+</html>
