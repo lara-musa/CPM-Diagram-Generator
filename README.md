@@ -30,3 +30,7 @@ I'm hoping to enhance this code to automatically:
 * Calculate the critical path based on task duration input
 * Highlight critical path tasks in a distinct color
 * Provide more detailed project timeline analytics
+
+
+## License
+Creative Commons CC-BY-NC-4.0
